@@ -13,7 +13,9 @@ from pydwf import (
     DwfLibrary,
     DwfEnumConfigInfo,
     DwfAnalogOutNode,
-    DwfAnalogOutFunction
+    DwfAnalogOutFunction,
+    DwfAnalogInFilter, 
+    DwfAcquisitionMode
 )
 from pydwf.utilities import openDwfDevice
 
@@ -98,3 +100,80 @@ def output_bitstream(
     axs[1].plot(freqs, fft_vals)
 
     return fig, axs
+
+
+def live_scope_and_decode_image(duration_sec=10, interval_sec=0.1, threshold=1.5, sampling_rate=1000):
+    num_bits = int(duration_sec / interval_sec)
+    bitstream = ""
+    
+    dwf = DwfLibrary()
+    with openDwfDevice(dwf) as device:
+        analog_in = device.analogIn
+        analog_in.reset()
+        analog_in.channelEnableSet(0, True)
+        analog_in.channelFilterSet(0, DwfAnalogInFilter.Average)
+        analog_in.channelRangeSet(0, 5.0)
+        analog_in.acquisitionModeSet(DwfAcquisitionMode.Single)
+        analog_in.frequencySet(sampling_rate)
+        analog_in.bufferSizeSet(8192)
+
+        # Setup live plot
+        plt.ion()
+        fig, ax = plt.subplots()
+        line, = ax.plot([], [], lw=2)
+        ax.set_ylim(-0.5, 5.5)
+        ax.set_xlim(0, 1)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Voltage (V)")
+        ax.set_title("Live Scope Trace (Phototransistor Signal)")
+
+        print("Starting acquisition and bitstream reconstruction...\n")
+        start_time = time.time()
+
+        for i in range(num_bits):
+            analog_in.configure(reconfigure=True, start=True)
+            while True:
+                if analog_in.status(True).name == "Done":
+                    break
+                time.sleep(0.01)
+
+            num_samples = analog_in.statusSamplesValid()
+            data = analog_in.statusData(0, num_samples)
+            t = np.linspace(0, len(data)/sampling_rate, len(data))
+
+            # Live plot update
+            line.set_data(t, data)
+            ax.set_xlim(0, t[-1])
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+
+            # Bitstream decoding
+            avg_voltage = float(np.mean(data))
+            bit = '1' if avg_voltage >= threshold else '0'
+            bitstream += bit
+            print(f"Bit {i+1}: {bit} (V = {avg_voltage:.2f})")
+
+            elapsed = time.time() - start_time
+            remaining = (i + 1) * interval_sec - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+
+        plt.ioff()
+        plt.close()
+
+    print("\nAcquisition complete.")
+    print("Reconstructed bitstream:", bitstream)
+
+    # Convert bitstream to image
+    if len(bitstream) == 100:
+        image_array = np.array(list(map(int, bitstream))).reshape((10, 10))
+        plt.imshow(image_array, cmap='gray', interpolation='nearest')
+        plt.title("Reconstructed Image")
+        plt.axis('off')
+        plt.show()
+    else:
+        print("Error: Bitstream is not 100 bits (10×10 image).")
+
+    return bitstream
+
+
