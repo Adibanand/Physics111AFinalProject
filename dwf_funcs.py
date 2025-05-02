@@ -634,3 +634,27 @@ def output_bitstream6(
     axs[1].plot(freqs, fft_vals)
 
     return fig, axs
+
+
+
+
+def compute_bit_accuracy(decoded, reference):
+    """
+    Compare decoded bitstring to reference and compute accuracy.
+
+    Parameters:
+    - decoded: the decoded bitstring (string of '0's and '1's)
+    - reference: the correct reference bitstring
+
+    Returns:
+    - accuracy: fraction of matching bits (0.0 to 1.0)
+    - matching: number of matching bits
+    - total: number of bits compared
+    """
+    # Compare only up to the length of the shorter string
+    min_length = min(len(decoded), len(reference))
+    matches = sum(d == r for d, r in zip(decoded[:min_length], reference[:min_length]))
+    accuracy = matches / min_length if min_length > 0 else 0.0
+
+    print(f"Accuracy: {accuracy:.5%} ({matches}/{min_length} bits compared)")
+    return accuracy, matches, min_length
