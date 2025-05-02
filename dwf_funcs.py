@@ -43,9 +43,9 @@ def create_figure(scan_type: str, figsize: RangeLimits = None) -> Tuple[Figure, 
 
 def output_bitstream(
     bit_string: str,
-    voltage_high: float = 3.0,
+    voltage_high: float = 4.0,
     voltage_low: float = 0.0,
-    hold_time: float = 1.0
+    hold_time: float = 0.1
 ) -> Tuple[Figure, NDArray]:
     '''
     Outputs a digital bitstring as DC voltages using the Wavegen (no scope).
