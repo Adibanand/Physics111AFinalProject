@@ -540,3 +540,97 @@ def output_bitstream5(
     axs[1].plot(freqs, fft_vals)
 
     return fig, axs
+
+
+
+
+def output_bitstream6(
+    bit_string: str,
+    voltage_high: float = 3.0,
+    voltage_low: float = 0.0,
+    hold_time: float = 1.0
+) -> Tuple[Figure, NDArray]:
+    """
+    Outputs a digital bitstring as DC voltages using the Wavegen (no scope).
+    Prepends a preamble: 5s of high voltage, then 1 hold_time of low voltage.
+    Returns a plot of the voltage levels and their FFT.
+    """
+    import time
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from pydwf import (
+        DwfLibrary, DwfEnumConfigInfo,
+        DwfAnalogOutNode, DwfAnalogOutFunction
+    )
+    from pydwf.utilities import openDwfDevice
+
+    from dwf_funcs import create_figure, ScanType  # use your existing module
+
+    times = []
+    values = []
+    t0 = time.time()
+
+    with openDwfDevice(
+        DwfLibrary(),
+        score_func=lambda conf_params: conf_params[DwfEnumConfigInfo.AnalogInBufferSize]
+    ) as device:
+        ao = device.analogOut
+        CH = 0
+        node = DwfAnalogOutNode.Carrier
+
+        ao.reset(-1)
+        ao.nodeEnableSet(CH, node, True)
+        ao.nodeFunctionSet(CH, node, DwfAnalogOutFunction.Sine)
+        ao.nodeFrequencySet(CH, node, 0.1)
+        ao.nodeSymmetrySet(CH, node, 50.0)
+        ao.nodeOffsetSet(CH, node, 0.0)
+        ao.nodeAmplitudeSet(CH, node, 0.0)
+        ao.configure(CH, True)
+        time.sleep(0.1)
+
+        # --- Preamble: 5s high voltage ---
+        ao.nodeOffsetSet(CH, node, voltage_high)
+        ao.configure(CH, True)
+        t_start = time.time()
+        while time.time() - t_start < 5.0:
+            times.append(time.time() - t0)
+            values.append(voltage_high)
+            time.sleep(0.1)
+
+        # --- Preamble: hold_time of low voltage ---
+        ao.nodeOffsetSet(CH, node, voltage_low)
+        ao.configure(CH, True)
+        times.append(time.time() - t0)
+        values.append(voltage_low)
+        time.sleep(hold_time)
+
+        # --- Bitstream voltage output ---
+        for bit in bit_string:
+            v = voltage_high if bit == '1' else voltage_low
+            ao.nodeOffsetSet(CH, node, v)
+            ao.configure(CH, True)
+            t = time.time() - t0
+            times.append(t)
+            values.append(v)
+            time.sleep(hold_time)
+
+        # Return to low voltage at end
+        ao.nodeOffsetSet(CH, node, voltage_low)
+        ao.configure(CH, True)
+
+    # Plot signal and FFT
+    fig, axs = create_figure(ScanType.TEST)
+    axs[0].step(times, values, where='post')
+
+    if len(times) > 1:
+        dt = np.diff(times)
+        fs = 1.0 / np.mean(dt)
+    else:
+        fs = 1.0
+
+    sig = np.array(values)
+    fft_vals = np.abs(np.fft.rfft(sig))
+    freqs = np.fft.rfftfreq(len(sig), d=1/fs)
+    axs[1].plot(freqs, fft_vals)
+
+    return fig, axs
